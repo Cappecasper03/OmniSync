@@ -86,9 +86,6 @@ public:
 	static FString GetRelativePathForFile( const FString& AbsolutePath );
 
 	UPROPERTY( EditAnywhere )
-	EGlobalSettingSyncerScope PluginSettingsScope = EGlobalSettingSyncerScope::PerProject;
-
-	UPROPERTY( EditAnywhere )
 	FConfigFileSettingsStruct ConfigFileSettingsStruct;
 
 private:

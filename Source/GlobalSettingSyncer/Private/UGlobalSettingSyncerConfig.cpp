@@ -143,7 +143,7 @@ FString UGlobalSettingSyncerConfig::GetGlobalSettingSyncerDirectory()
 	return FPaths::Combine( BaseDir, "UnrealEngine", "GlobalSettingSyncer" );
 }
 
-FString UGlobalSettingSyncerConfig::GetScopedSettingsDirectory( EGlobalSettingSyncerScope Scope )
+FString UGlobalSettingSyncerConfig::GetScopedSettingsDirectory( const EGlobalSettingSyncerScope Scope )
 {
 	TRACE_CPU_SCOPE;
 
@@ -242,12 +242,7 @@ FString UGlobalSettingSyncerConfig::GetPluginSettingsFilePath()
 {
 	TRACE_CPU_SCOPE;
 
-	EGlobalSettingSyncerScope Scope = EGlobalSettingSyncerScope::PerProject;
-	if( Instance )
-		Scope = Instance->PluginSettingsScope;
-
-	const FString SettingsDir = GetScopedSettingsDirectory( Scope );
-	return FPaths::Combine( SettingsDir, "GlobalSettingSyncerSettings.json" );
+	return FPaths::Combine( GetScopedSettingsDirectory( EGlobalSettingSyncerScope::PerProject ), "GlobalSettingSyncerSettings.json" );
 }
 
 void UGlobalSettingSyncerConfig::OnSettingsChanged()
