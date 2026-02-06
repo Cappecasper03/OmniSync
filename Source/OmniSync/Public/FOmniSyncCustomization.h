@@ -4,7 +4,7 @@
 #include "IDetailCustomization.h"
 
 class IDetailLayoutBuilder;
-class UGlobalSettingSyncerConfig;
+class UOmniSyncConfig;
 
 struct FConfigTreeItem
 {
@@ -21,10 +21,10 @@ struct FConfigTreeItem
 	bool bIsExpanded = false;
 };
 
-class FGlobalSettingSyncerCustomization : public IDetailCustomization
+class FOmniSyncCustomization : public IDetailCustomization
 {
 public:
-	static TSharedRef< IDetailCustomization > MakeInstance() { return MakeShareable( new FGlobalSettingSyncerCustomization ); }
+	static TSharedRef< IDetailCustomization > MakeInstance() { return MakeShareable( new FOmniSyncCustomization ); }
 
 	virtual void CustomizeDetails( IDetailLayoutBuilder& DetailBuilder ) override;
 
@@ -34,7 +34,7 @@ private:
 	TSharedRef< ITableRow > OnGenerateRow( TSharedRef< FConfigTreeItem > InItem, const TSharedRef< STableViewBase >& OwnerTable ) const;
 	void                    OnGetChildren( TSharedRef< FConfigTreeItem > InItem, TArray< TSharedRef< FConfigTreeItem > >& OutChildren ) { OutChildren = InItem->Children; }
 
-	TWeakObjectPtr< UGlobalSettingSyncerConfig >             ConfigObject;
+	TWeakObjectPtr< UOmniSyncConfig >                        ConfigObject;
 	TSharedPtr< STreeView< TSharedRef< FConfigTreeItem > > > TreeView;
 	TArray< TSharedRef< FConfigTreeItem > >                  RootItems;
 };

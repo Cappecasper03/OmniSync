@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0",
-	"FriendlyName": "Global Setting Syncer",
+	"FriendlyName": "OmniSync",
 	"Description": "Synchronize configuration files across multiple projects and engine versions with automatic file discovery and configurable sync scopes",
 	"Category": "Editor",
 	"CreatedBy": "Cappecasper03",
@@ -16,7 +16,7 @@
 	"Installed": false,
 	"Modules": [
 		{
-			"Name": "GlobalSettingSyncer",
+			"Name": "OmniSync",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
 		}

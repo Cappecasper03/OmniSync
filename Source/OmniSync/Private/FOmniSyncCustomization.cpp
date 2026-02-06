@@ -1,13 +1,13 @@
-#include "FGlobalSettingSyncerCustomization.h"
+#include "FOmniSyncCustomization.h"
 
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
 #include "Macros.h"
-#include "UGlobalSettingSyncerConfig.h"
+#include "UOmniSyncConfig.h"
 
-#define LOCTEXT_NAMESPACE "GlobalSettingSyncerCustomization"
+#define LOCTEXT_NAMESPACE "OmniSyncCustomization"
 
-void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& DetailBuilder )
+void FOmniSyncCustomization::CustomizeDetails( IDetailLayoutBuilder& DetailBuilder )
 {
 	TRACE_CPU_SCOPE;
 
@@ -15,9 +15,9 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 	DetailBuilder.GetObjectsBeingCustomized( ObjectsBeingCustomized );
 
 	if( !ObjectsBeingCustomized.IsEmpty() )
-		ConfigObject = Cast< UGlobalSettingSyncerConfig >( ObjectsBeingCustomized[ 0 ].Get() );
+		ConfigObject = Cast< UOmniSyncConfig >( ObjectsBeingCustomized[ 0 ].Get() );
 
-	TSharedRef< IPropertyHandle > StructHandle    = DetailBuilder.GetProperty( GET_MEMBER_NAME_CHECKED( UGlobalSettingSyncerConfig, ConfigFileSettingsStruct ) );
+	TSharedRef< IPropertyHandle > StructHandle    = DetailBuilder.GetProperty( GET_MEMBER_NAME_CHECKED( UOmniSyncConfig, ConfigFileSettingsStruct ) );
 	IDetailCategoryBuilder&       ActionsCategory = DetailBuilder.EditCategory( "Actions", FText::FromString( "Actions" ), ECategoryPriority::Important );
 
 	ActionsCategory.AddCustomRow( LOCTEXT( "SyncActionsRow", "Sync Actions" ) ).WholeRowContent()
@@ -33,7 +33,7 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 			.ToolTipText( LOCTEXT( "DiscoverFilesTooltip", "Scan the project and add all .ini files to the sync list" ) )
 			.OnClicked_Lambda( [this, StructHandle]
 			{
-				if( UGlobalSettingSyncerConfig* Config = ConfigObject.Get() )
+				if( UOmniSyncConfig* Config = ConfigObject.Get() )
 				{
 					Config->DiscoverAndAddConfigFiles();
 					StructHandle->NotifyFinishedChangingProperties();
@@ -51,7 +51,7 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 			.ToolTipText( LOCTEXT( "SaveToGlobalTooltip", "Save enabled config files to their global sync locations" ) )
 			.OnClicked_Lambda( [this]
 			{
-				if( UGlobalSettingSyncerConfig* Config = ConfigObject.Get() )
+				if( UOmniSyncConfig* Config = ConfigObject.Get() )
 					Config->SaveSettingsToGlobal();
 				return FReply::Handled();
 			} )
@@ -66,7 +66,7 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 			.ToolTipText( LOCTEXT( "LoadFromGlobalTooltip", "Load config files from their global sync locations. Restart may be required." ) )
 			.OnClicked_Lambda( [this]
 			{
-				if( UGlobalSettingSyncerConfig* Config = ConfigObject.Get() )
+				if( UOmniSyncConfig* Config = ConfigObject.Get() )
 					Config->LoadSettingsFromGlobal();
 				return FReply::Handled();
 			} )
@@ -82,13 +82,13 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 	[
 		SAssignNew( TreeView, STreeView< TSharedRef< FConfigTreeItem > > )
 		.TreeItemsSource( &RootItems )
-		.OnGenerateRow( this, &FGlobalSettingSyncerCustomization::OnGenerateRow )
-		.OnGetChildren( this, &FGlobalSettingSyncerCustomization::OnGetChildren )
+		.OnGenerateRow( this, &FOmniSyncCustomization::OnGenerateRow )
+		.OnGetChildren( this, &FOmniSyncCustomization::OnGetChildren )
 		.SelectionMode( ESelectionMode::None )
 	];
 }
 
-void FGlobalSettingSyncerCustomization::RefreshTreeData( const IDetailLayoutBuilder& DetailBuilder )
+void FOmniSyncCustomization::RefreshTreeData( const IDetailLayoutBuilder& DetailBuilder )
 {
 	TRACE_CPU_SCOPE;
 	RootItems.Empty();
@@ -96,7 +96,7 @@ void FGlobalSettingSyncerCustomization::RefreshTreeData( const IDetailLayoutBuil
 	if( !ConfigObject.IsValid() )
 		return;
 
-	const TSharedRef< IPropertyHandle > StructHandle   = DetailBuilder.GetProperty( GET_MEMBER_NAME_CHECKED( UGlobalSettingSyncerConfig, ConfigFileSettingsStruct ) );
+	const TSharedRef< IPropertyHandle > StructHandle   = DetailBuilder.GetProperty( GET_MEMBER_NAME_CHECKED( UOmniSyncConfig, ConfigFileSettingsStruct ) );
 	const TSharedPtr< IPropertyHandle > SettingsHandle = StructHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettingsStruct, Settings ) );
 
 	if( !SettingsHandle.IsValid() )
@@ -168,7 +168,7 @@ void FGlobalSettingSyncerCustomization::RefreshTreeData( const IDetailLayoutBuil
 	}
 }
 
-TSharedRef< ITableRow > FGlobalSettingSyncerCustomization::OnGenerateRow( TSharedRef< FConfigTreeItem > InItem, const TSharedRef< STableViewBase >& OwnerTable ) const
+TSharedRef< ITableRow > FOmniSyncCustomization::OnGenerateRow( TSharedRef< FConfigTreeItem > InItem, const TSharedRef< STableViewBase >& OwnerTable ) const
 {
 	if( InItem->bIsFolder )
 	{
@@ -268,13 +268,13 @@ TSharedRef< ITableRow > FGlobalSettingSyncerCustomization::OnGenerateRow( TShare
 						{
 							uint8 ScopeValue = 0;
 							InItem->ScopeHandle->GetValue( ScopeValue );
-							switch( static_cast< EGlobalSettingSyncerScope >( ScopeValue ) )
+							switch( static_cast< EOmniSyncScope >( ScopeValue ) )
 							{
-								case EGlobalSettingSyncerScope::Global:
+								case EOmniSyncScope::Global:
 									return LOCTEXT( "ScopeGlobal", "Global" );
-								case EGlobalSettingSyncerScope::PerEngineVersion:
+								case EOmniSyncScope::PerEngineVersion:
 									return LOCTEXT( "ScopePerEngine", "Per Engine" );
-								case EGlobalSettingSyncerScope::PerProject:
+								case EOmniSyncScope::PerProject:
 									return LOCTEXT( "ScopePerProject", "Per Project" );
 							}
 						}

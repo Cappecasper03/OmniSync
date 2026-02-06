@@ -3,10 +3,10 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 
-#include "UGlobalSettingSyncerConfig.generated.h"
+#include "UOmniSyncConfig.generated.h"
 
 UENUM( BlueprintType )
-enum class EGlobalSettingSyncerScope : uint8
+enum class EOmniSyncScope : uint8
 {
 	Global,
 	PerEngineVersion,
@@ -28,7 +28,7 @@ struct FConfigFileSettings
 	bool bEnabled = false;
 
 	UPROPERTY( EditAnywhere )
-	EGlobalSettingSyncerScope SettingsScope = EGlobalSettingSyncerScope::PerEngineVersion;
+	EOmniSyncScope SettingsScope = EOmniSyncScope::PerEngineVersion;
 
 	UPROPERTY( EditAnywhere )
 	bool bAutoSyncEnabled = true;
@@ -44,12 +44,12 @@ struct FConfigFileSettingsStruct
 };
 
 UCLASS()
-class GLOBALSETTINGSYNCER_API UGlobalSettingSyncerConfig : public UObject
+class OMNISYNC_API UOmniSyncConfig : public UObject
 {
 	GENERATED_BODY()
 
 public:
-	static UGlobalSettingSyncerConfig* Get();
+	static UOmniSyncConfig* Get();
 
 	void Initialize() { EnableAutoSync(); }
 	void Shutdown() const { DisableAutoSync(); }
@@ -75,10 +75,10 @@ private:
 	static bool CopyIniFile( const FString& Source, const FString& Destination );
 	static bool EnsureDirectoryExists( const FString& DirectoryPath );
 
-	static FString GetScopedSettingsDirectory( EGlobalSettingSyncerScope Scope );
+	static FString GetScopedSettingsDirectory( EOmniSyncScope Scope );
 	static FString GetPluginSettingsFilePath();
 
 	FTSTicker::FDelegateHandle AutoSyncHandle;
 
-	static UGlobalSettingSyncerConfig* Instance;
+	static UOmniSyncConfig* Instance;
 };
