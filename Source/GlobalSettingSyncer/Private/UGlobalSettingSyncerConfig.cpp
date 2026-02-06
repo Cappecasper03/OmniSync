@@ -101,6 +101,7 @@ void UGlobalSettingSyncerConfig::LoadSettingsFromGlobal()
 
 		const FString Source      = FPaths::Combine( GetScopedSettingsDirectory( Setting.SettingsScope ), Setting.RelativePath );
 		const FString Destination = FPaths::Combine( ProjectDir, Setting.RelativePath );
+		CopyIniFile( Source, Destination );
 	}
 }
 

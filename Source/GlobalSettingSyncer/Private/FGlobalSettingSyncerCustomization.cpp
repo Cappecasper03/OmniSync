@@ -2,7 +2,6 @@
 
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
-#include "IDetailGroup.h"
 #include "Macros.h"
 #include "UGlobalSettingSyncerConfig.h"
 
@@ -18,11 +17,13 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 	if( !ObjectsBeingCustomized.IsEmpty() )
 		ConfigObject = Cast< UGlobalSettingSyncerConfig >( ObjectsBeingCustomized[ 0 ].Get() );
 
-	IDetailCategoryBuilder& ActionsCategory = DetailBuilder.EditCategory( "Actions", FText::FromString( "Actions" ), ECategoryPriority::Important );
+	TSharedRef< IPropertyHandle > StructHandle    = DetailBuilder.GetProperty( GET_MEMBER_NAME_CHECKED( UGlobalSettingSyncerConfig, ConfigFileSettingsStruct ) );
+	IDetailCategoryBuilder&       ActionsCategory = DetailBuilder.EditCategory( "Actions", FText::FromString( "Actions" ), ECategoryPriority::Important );
 
 	ActionsCategory.AddCustomRow( LOCTEXT( "SyncActionsRow", "Sync Actions" ) ).WholeRowContent()
 	[
 		SNew( SHorizontalBox )
+
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding( 2 )
@@ -30,19 +31,17 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 			SNew( SButton )
 			.Text( LOCTEXT( "DiscoverFiles", "Discover All Config Files" ) )
 			.ToolTipText( LOCTEXT( "DiscoverFilesTooltip", "Scan the project and add all .ini files to the sync list" ) )
-			.OnClicked_Lambda( [this]
+			.OnClicked_Lambda( [this, StructHandle]
 			{
 				if( UGlobalSettingSyncerConfig* Config = ConfigObject.Get() )
 				{
 					Config->DiscoverAndAddConfigFiles();
-
-					FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked< FPropertyEditorModule >( "PropertyEditor" );
-					PropertyModule.NotifyCustomizationModuleChanged();
+					StructHandle->NotifyFinishedChangingProperties();
 				}
-
 				return FReply::Handled();
 			} )
 		]
+
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding( 2 )
@@ -54,10 +53,10 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 			{
 				if( UGlobalSettingSyncerConfig* Config = ConfigObject.Get() )
 					Config->SaveSettingsToGlobal();
-
 				return FReply::Handled();
 			} )
 		]
+
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding( 2 )
@@ -69,19 +68,30 @@ void FGlobalSettingSyncerCustomization::CustomizeDetails( IDetailLayoutBuilder& 
 			{
 				if( UGlobalSettingSyncerConfig* Config = ConfigObject.Get() )
 					Config->LoadSettingsFromGlobal();
-
 				return FReply::Handled();
 			} )
 		]
 	];
 
-	DetailBuilder.HideProperty( DetailBuilder.GetProperty( GET_MEMBER_NAME_CHECKED( UGlobalSettingSyncerConfig, ConfigFileSettingsStruct ) ) );
-	BuildConfigFileItems( DetailBuilder );
+	DetailBuilder.HideProperty( StructHandle );
+
+	RefreshTreeData( DetailBuilder );
+
+	IDetailCategoryBuilder& FilesCategory = DetailBuilder.EditCategory( "Configs", LOCTEXT( "Configs", "Configs" ), ECategoryPriority::Default );
+	FilesCategory.AddCustomRow( LOCTEXT( "FilesTreeRow", "Files Tree" ) ).WholeRowContent()
+	[
+		SAssignNew( TreeView, STreeView< TSharedRef< FConfigTreeItem > > )
+		.TreeItemsSource( &RootItems )
+		.OnGenerateRow( this, &FGlobalSettingSyncerCustomization::OnGenerateRow )
+		.OnGetChildren( this, &FGlobalSettingSyncerCustomization::OnGetChildren )
+		.SelectionMode( ESelectionMode::None )
+	];
 }
 
-void FGlobalSettingSyncerCustomization::BuildConfigFileItems( IDetailLayoutBuilder& DetailBuilder ) const
+void FGlobalSettingSyncerCustomization::RefreshTreeData( const IDetailLayoutBuilder& DetailBuilder )
 {
 	TRACE_CPU_SCOPE;
+	RootItems.Empty();
 
 	if( !ConfigObject.IsValid() )
 		return;
@@ -89,145 +99,175 @@ void FGlobalSettingSyncerCustomization::BuildConfigFileItems( IDetailLayoutBuild
 	const TSharedRef< IPropertyHandle > StructHandle   = DetailBuilder.GetProperty( GET_MEMBER_NAME_CHECKED( UGlobalSettingSyncerConfig, ConfigFileSettingsStruct ) );
 	const TSharedPtr< IPropertyHandle > SettingsHandle = StructHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettingsStruct, Settings ) );
 
+	if( !SettingsHandle.IsValid() )
+		return;
+
 	uint32 NumElements = 0;
 	SettingsHandle->GetNumChildren( NumElements );
 
-	if( NumElements == 0 )
-	{
-		IDetailCategoryBuilder& FilesCategory = DetailBuilder.EditCategory( "Configs", LOCTEXT( "Configs", "Configs" ), ECategoryPriority::Default );
-		FilesCategory.AddCustomRow( LOCTEXT( "NoFilesRow", "No Files" ) ).WholeRowContent()
-		[
-			SNew( STextBlock )
-			.Text( LOCTEXT( "NoFilesText", "No config files configured. Click 'Discover All Config Files' to scan your project." ) )
-			.AutoWrapText( true )
-		];
-		return;
-	}
+	TMap< FString, TSharedRef< FConfigTreeItem > > FolderCache;
 
-	TMap< FString, IDetailCategoryBuilder* > RootCache;
-	TMap< FString, IDetailGroup* >           GroupCache;
 	for( uint32 i = 0; i < NumElements; ++i )
 	{
 		TSharedPtr< IPropertyHandle > ElementHandle = SettingsHandle->GetChildHandle( i );
 		if( !ElementHandle.IsValid() )
 			continue;
 
-		TSharedPtr< IPropertyHandle > RelativePathHandle = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, RelativePath ) );
-		TSharedPtr< IPropertyHandle > FileNameHandle     = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, FileName ) );
-		TSharedPtr< IPropertyHandle > EnabledHandle      = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, bEnabled ) );
-		TSharedPtr< IPropertyHandle > ScopeHandle        = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, SettingsScope ) );
-		TSharedPtr< IPropertyHandle > AutoSyncHandle     = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, bAutoSyncEnabled ) );
-
 		FString FullRelativePath;
-		if( RelativePathHandle.IsValid() )
-			RelativePathHandle->GetValue( FullRelativePath );
-
-		FString FileName;
-		if( FileNameHandle.IsValid() )
-			FileNameHandle->GetValue( FileName );
-
+		ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, RelativePath ) )->GetValue( FullRelativePath );
 		FullRelativePath.ReplaceInline( TEXT( "\\" ), TEXT( "/" ) );
 
-		FString FolderPath;
-		FullRelativePath.Split( "/", &FolderPath, nullptr, ESearchCase::IgnoreCase, ESearchDir::FromEnd );
+		FString FileName;
+		ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, FileName ) )->GetValue( FileName );
 
 		TArray< FString > PathParts;
-		FolderPath.ParseIntoArray( PathParts, TEXT( "/" ) );
+		FullRelativePath.ParseIntoArray( PathParts, TEXT( "/" ) );
 
-		IDetailCategoryBuilder* RootCategory = nullptr;
+		TSharedPtr< FConfigTreeItem > CurrentParent  = nullptr;
+		FString                       CumulativePath = "";
 
-		if( IDetailCategoryBuilder** Find = RootCache.Find( PathParts[ 0 ] ) )
-			RootCategory = *Find;
-		else
-		{
-			RootCategory = &DetailBuilder.EditCategory( FName( PathParts[ 0 ] ), FText::FromString( PathParts[ 0 ] ), ECategoryPriority::Default );
-			RootCache.Add( PathParts[ 0 ], RootCategory );
-		}
-
-		IDetailGroup* CurrentParentGroup = nullptr;
-		FString       CumulativePath     = "";
-		for( int32 j = 1; j < PathParts.Num(); ++j )
+		for( int32 j = 0; j < PathParts.Num() - 1; ++j )
 		{
 			FString PartName = PathParts[ j ];
-			CumulativePath   += "/" + PartName;
+			CumulativePath   += ( j == 0 ? "" : "/" ) + PartName;
 
-			if( !GroupCache.Contains( CumulativePath ) )
+			if( !FolderCache.Contains( CumulativePath ) )
 			{
-				IDetailGroup* NewGroup = nullptr;
-				if( CurrentParentGroup == nullptr )
-					NewGroup = &RootCategory->AddGroup( FName( *CumulativePath ), FText::FromString( PartName ) );
+				TSharedRef< FConfigTreeItem > NewFolder = MakeShared< FConfigTreeItem >();
+				NewFolder->Name                         = PartName;
+				NewFolder->bIsFolder                    = true;
+				NewFolder->FullPath                     = CumulativePath;
+
+				if( CurrentParent.IsValid() )
+					CurrentParent->Children.Add( NewFolder );
 				else
-					NewGroup = &CurrentParentGroup->AddGroup( FName( *CumulativePath ), FText::FromString( PartName ) );
+					RootItems.Add( NewFolder );
 
-				GroupCache.Add( CumulativePath, NewGroup );
+				FolderCache.Add( CumulativePath, NewFolder );
 			}
-
-			CurrentParentGroup = GroupCache[ CumulativePath ];
+			CurrentParent = FolderCache[ CumulativePath ];
 		}
 
-		IDetailGroup* FileGroup = nullptr;
-		if( CurrentParentGroup )
-			FileGroup = &CurrentParentGroup->AddGroup( FName( *FullRelativePath ), FText::FromString( FileName ) );
-		else
-			FileGroup = &RootCategory->AddGroup( FName( *FullRelativePath ), FText::FromString( FileName ) );
+		TSharedRef< FConfigTreeItem > FileItem = MakeShared< FConfigTreeItem >();
+		FileItem->Name                         = FileName;
+		FileItem->bIsFolder                    = false;
+		FileItem->FullPath                     = FullRelativePath;
+		FileItem->EnabledHandle                = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, bEnabled ) );
+		FileItem->ScopeHandle                  = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, SettingsScope ) );
+		FileItem->AutoSyncHandle               = ElementHandle->GetChildHandle( GET_MEMBER_NAME_CHECKED( FConfigFileSettings, bAutoSyncEnabled ) );
 
-		FileGroup->HeaderRow().NameContent()
+		if( CurrentParent.IsValid() )
+			CurrentParent->Children.Add( FileItem );
+		else
+			RootItems.Add( FileItem );
+	}
+
+	if( TreeView.IsValid() )
+	{
+		TreeView->RequestTreeRefresh();
+	}
+}
+
+TSharedRef< ITableRow > FGlobalSettingSyncerCustomization::OnGenerateRow( TSharedRef< FConfigTreeItem > InItem, const TSharedRef< STableViewBase >& OwnerTable ) const
+{
+	if( InItem->bIsFolder )
+	{
+		return SNew( STableRow< TSharedRef< FConfigTreeItem > >, OwnerTable )
+			[
+				SNew( STextBlock )
+				.Text( FText::FromString( InItem->Name ) )
+				.Font( IDetailLayoutBuilder::GetDetailFontBold() )
+
+			];
+	}
+	return SNew( STableRow< TSharedRef< FConfigTreeItem > >, OwnerTable )
+		.Padding( FMargin( 0, 2 ) )
+		[
+			SNew( SVerticalBox )
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding( 0, 2 )
 			[
 				SNew( SHorizontalBox )
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding( 0, 0, 4, 0 )
+				.VAlign( VAlign_Center )
+				[
+					SNew( SButton )
+					.ButtonStyle( FAppStyle::Get(), "SimpleButton" )
+					.ContentPadding( FMargin( 1, 0 ) )
+					.OnClicked_Lambda( [InItem, this]()
+					{
+						InItem->bIsExpanded = !InItem->bIsExpanded;
+						if( TreeView.IsValid() )
+							TreeView->RequestTreeRefresh();
+						return FReply::Handled();
+					} )
+					[
+						SNew( STextBlock )
+						.Text_Lambda( [InItem]()
+						{
+							return FText::FromString( InItem->bIsExpanded ? TEXT( "▼" ) : TEXT( "►" ) );
+						} )
+						.Font( FCoreStyle::GetDefaultFontStyle( "Regular", 8 ) )
+					]
+				]
+
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.Padding( 0, 0, 8, 0 )
 				.VAlign( VAlign_Center )
 				[
 					SNew( SCheckBox )
-					.IsChecked_Lambda( [EnabledHandle]()
+					.IsChecked_Lambda( [InItem]()
 					{
-						bool bValue = false;
-						if( EnabledHandle.IsValid() )
-							EnabledHandle->GetValue( bValue );
-						return bValue ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+						bool bVal = false;
+						if( InItem->EnabledHandle.IsValid() )
+							InItem->EnabledHandle->GetValue( bVal );
+						return bVal ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 					} )
-					.OnCheckStateChanged_Lambda( [EnabledHandle, this]( ECheckBoxState NewState )
+					.OnCheckStateChanged_Lambda( [InItem, this]( ECheckBoxState NewState )
 					{
-						if( EnabledHandle.IsValid() )
+						if( InItem->EnabledHandle.IsValid() )
 						{
-							EnabledHandle->SetValue( NewState == ECheckBoxState::Checked );
+							InItem->EnabledHandle->SetValue( NewState == ECheckBoxState::Checked );
 							if( ConfigObject.IsValid() )
 								ConfigObject->OnSettingsChanged();
 						}
 					} )
 				]
-				+ SHorizontalBox::Slot()
-				.FillWidth( 1 )
-				.VAlign( VAlign_Center )
-				[
-					SNew( STextBlock )
-					.Text( FText::FromString( FileName ) )
-					.Font( IDetailLayoutBuilder::GetDetailFontBold() )
-				]
-			]
-			.ValueContent()
-			.MinDesiredWidth( 250 )
-			[
-				SNew( SHorizontalBox )
+
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.Padding( 0, 0, 12, 0 )
 				.VAlign( VAlign_Center )
 				[
 					SNew( STextBlock )
-					.Text_Lambda( [EnabledHandle, ScopeHandle]()
+					.Text( FText::FromString( InItem->Name ) )
+					.Font( IDetailLayoutBuilder::GetDetailFontBold() )
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding( 0, 0, 12, 0 )
+				.VAlign( VAlign_Center )
+				[
+					SNew( STextBlock )
+					.Text_Lambda( [InItem]()
 					{
 						bool bEnabled = false;
-						if( EnabledHandle.IsValid() )
-							EnabledHandle->GetValue( bEnabled );
+						if( InItem->EnabledHandle.IsValid() )
+							InItem->EnabledHandle->GetValue( bEnabled );
 						if( !bEnabled )
 							return LOCTEXT( "Disabled", "Disabled" );
 
-						if( ScopeHandle.IsValid() )
+						if( InItem->ScopeHandle.IsValid() )
 						{
 							uint8 ScopeValue = 0;
-							ScopeHandle->GetValue( ScopeValue );
+							InItem->ScopeHandle->GetValue( ScopeValue );
 							switch( static_cast< EGlobalSettingSyncerScope >( ScopeValue ) )
 							{
 								case EGlobalSettingSyncerScope::Global:
@@ -241,49 +281,100 @@ void FGlobalSettingSyncerCustomization::BuildConfigFileItems( IDetailLayoutBuild
 						return FText::GetEmpty();
 					} )
 					.Font( IDetailLayoutBuilder::GetDetailFont() )
-					.ColorAndOpacity_Lambda( [EnabledHandle]()
+					.ColorAndOpacity_Lambda( [InItem]()
 					{
 						bool bEnabled = false;
-						if( EnabledHandle.IsValid() )
-							EnabledHandle->GetValue( bEnabled );
-						return bEnabled ? FLinearColor( 0.7f, 0.7f, 1 ) : FLinearColor( 0.5f, 0.5f, 0.5f );
+						if( InItem->EnabledHandle.IsValid() )
+							InItem->EnabledHandle->GetValue( bEnabled );
+						return bEnabled ? FLinearColor( 0.7f, 0.7f, 1.0f ) : FLinearColor( 0.5f, 0.5f, 0.5f );
 					} )
 				]
+
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign( VAlign_Center )
 				[
 					SNew( STextBlock )
-					.Text_Lambda( [EnabledHandle, AutoSyncHandle]()
+					.Text_Lambda( [InItem]()
 					{
 						bool bEnabled = false;
-						if( EnabledHandle.IsValid() )
-							EnabledHandle->GetValue( bEnabled );
+						if( InItem->EnabledHandle.IsValid() )
+							InItem->EnabledHandle->GetValue( bEnabled );
 						if( !bEnabled )
 							return FText::GetEmpty();
 
 						bool bAutoSync = false;
-						if( AutoSyncHandle.IsValid() )
-							AutoSyncHandle->GetValue( bAutoSync );
+						if( InItem->AutoSyncHandle.IsValid() )
+							InItem->AutoSyncHandle->GetValue( bAutoSync );
 						return bAutoSync ? LOCTEXT( "AutoSyncOn", "[Auto-Sync]" ) : LOCTEXT( "ManualSync", "[Manual]" );
 					} )
 					.Font( IDetailLayoutBuilder::GetDetailFont() )
-					.ColorAndOpacity_Lambda( [AutoSyncHandle]()
+					.ColorAndOpacity_Lambda( [InItem]()
 					{
 						bool bAutoSync = false;
-						if( AutoSyncHandle.IsValid() )
-							AutoSyncHandle->GetValue( bAutoSync );
-						return bAutoSync ? FLinearColor( 0.3f, 1, 0.3f ) : FLinearColor( 0.5f, 0.5f, 0.5f );
+						if( InItem->AutoSyncHandle.IsValid() )
+							InItem->AutoSyncHandle->GetValue( bAutoSync );
+						return bAutoSync ? FLinearColor( 0.3f, 1.0f, 0.3f ) : FLinearColor( 0.5f, 0.5f, 0.5f );
 					} )
 				]
-			];
+			]
 
-		if( ScopeHandle.IsValid() )
-			FileGroup->AddPropertyRow( ScopeHandle.ToSharedRef() ).DisplayName( LOCTEXT( "SettingsScope", "Sync Scope" ) );
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding( 32, 4, 0, 4 )
+			[
+				SNew( SVerticalBox )
+				.Visibility_Lambda( [InItem]() { return InItem->bIsExpanded ? EVisibility::Visible : EVisibility::Collapsed; } )
 
-		if( AutoSyncHandle.IsValid() )
-			FileGroup->AddPropertyRow( AutoSyncHandle.ToSharedRef() ).DisplayName( LOCTEXT( "AutoSync", "Auto-Sync" ) );
-	}
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding( 0, 2 )
+				[
+					SNew( SHorizontalBox )
+					+ SHorizontalBox::Slot()
+					.FillWidth( 0.4f )
+					.VAlign( VAlign_Center )
+					.Padding( 0, 0, 8, 0 )
+					[
+						SNew( STextBlock )
+						.Text( LOCTEXT( "SettingsScope", "Sync Scope" ) )
+						.Font( IDetailLayoutBuilder::GetDetailFont() )
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth( 0.6f )
+					[
+						InItem->ScopeHandle
+						.IsValid()
+							? InItem->ScopeHandle->CreatePropertyValueWidget()
+							: SNullWidget::NullWidget
+					]
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding( 0, 2 )
+				[
+					SNew( SHorizontalBox )
+					+ SHorizontalBox::Slot()
+					.FillWidth( 0.4f )
+					.VAlign( VAlign_Center )
+					.Padding( 0, 0, 8, 0 )
+					[
+						SNew( STextBlock )
+						.Text( LOCTEXT( "AutoSync", "Auto-Sync" ) )
+						.Font( IDetailLayoutBuilder::GetDetailFont() )
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth( 0.6f )
+					[
+						InItem->AutoSyncHandle
+						.IsValid()
+							? InItem->AutoSyncHandle->CreatePropertyValueWidget()
+							: SNullWidget::NullWidget
+					]
+				]
+			]
+		];
 }
 
 #undef LOCTEXT_NAMESPACE
